@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 
 from library.search import STOPWORDS, TOPICS
+import router
 from memory import _stems, asked_memory, forgets
 
 HOST = "http://" + os.environ.get("OLLAMA_HOST", "127.0.0.1:11434")
@@ -99,10 +100,10 @@ def family(model):
     return next((f for f in SAMPLING if f in names), "")
 
 
-def _post(path, body, stream=False):
+def _post(path, body, stream=False, timeout=900):
     req = urllib.request.Request(HOST + path, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
-    resp = urllib.request.urlopen(req, timeout=900)
+    resp = urllib.request.urlopen(req, timeout=timeout)
     return resp if stream else json.load(resp)
 
 
@@ -476,6 +477,11 @@ def chat_events(model, library, messages, reasoning="off", caps=None, length="no
     yield {"type": "done", "tokens": tokens, "seconds": seconds, "answer": answer, "cut_off": cut_off,
            "unfinished": unfinished, "unopened": unopened, "named": named if library and not unfinished else None,
            "sources": read, "seen": found[len(read):], "think": think, "discarded": discarded}
+    if router.mode() == "shadow":  # labels the question and logs it; changes nothing about the answer
+        try:
+            router.log(router.route(_post, model, question), question, model, reasoning)
+        except Exception:  # noqa: BLE001 - shadow mode never gets in the way
+            pass
     # Only when they said something about themselves or their family, or asked it to remember or forget something: the
     # step takes a few seconds. Not after an answer cut off at the length limit, which "Keep going" continues. It reads
     # only what the person said, so an answer that didn't finish doesn't stop it.
